@@ -1,0 +1,13 @@
+{
+  "db": "~/.redscrape/redscrape.db",
+  "rpm": 20,
+  "concurrency": 12,
+  "comment_limit": 500,
+  "comment_depth": -1,
+  "expand_more": true,
+  "more_limit": 500,
+  "retries": 4,
+  "timeout": 25.0,
+  "user_agent": null,
+  "cookie_string": null
+}
