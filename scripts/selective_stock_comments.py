@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from redscrape.config import load_config
-from redscrape.engine import _fetch_comments_parallel
+from redscrape.engine import CommentFetchResult, _fetch_comments_parallel
 from redscrape.pool import ClientPool
 from redscrape.storage import Store
 from redscrape.timewindow import parse_time_window
@@ -90,7 +90,22 @@ def select_posts(db: Path, *, after: float, before: float, limit: int) -> list[d
     return (signalled + other)[:limit]
 
 
-async def run(config: Config) -> dict[str, int]:
+def summarize_comments(
+    outcome: CommentFetchResult, stats: dict[str, int]
+) -> dict[str, object]:
+    return {
+        'selected_posts': outcome.requested,
+        'succeeded_posts': outcome.succeeded,
+        'zero_comment_posts': outcome.zero_comments,
+        'failed_posts': outcome.failed,
+        'fetched_comments': outcome.comments,
+        'errors': outcome.errors or {},
+        'complete': outcome.complete,
+        **stats,
+    }
+
+
+async def run(config: Config) -> dict[str, object]:
     posts = select_posts(
         config.db,
         after=config.after,
@@ -108,19 +123,20 @@ async def run(config: Config) -> dict[str, int]:
     store = Store(config.db)
     try:
         async with ClientPool(runtime) as pool:
-            count = await _fetch_comments_parallel(
+            outcome = await _fetch_comments_parallel(
                 cast(Any, pool), store, posts, 'best', 'selective-comments'
             )
-        result = {'selected_posts': len(posts), 'fetched_comments': count, **store.stats()}
+        result = summarize_comments(outcome, store.stats())
         print(result)
         return result
     finally:
         store.close()
 
 
-def main(argv: list[str] | None = None) -> None:
-    asyncio.run(run(parse_args(argv)))
+def main(argv: list[str] | None = None) -> int:
+    result = asyncio.run(run(parse_args(argv)))
+    return 0 if result['complete'] else 1
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

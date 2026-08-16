@@ -127,7 +127,7 @@ async def fetch_comments_for_post(
         depth=client.cfg.comment_depth if client.cfg.comment_depth > 0 else None,
     )
     if not body or not isinstance(body, list) or len(body) < 2:
-        return []
+        raise ValueError("Reddit returned a malformed comment listing")
 
     comments_listing = body[1]
     out: list[dict] = []
@@ -149,45 +149,92 @@ async def fetch_comments_for_post(
     return unique
 
 
+@dataclass(frozen=True)
+class CommentFetchResult:
+    requested: int = 0
+    succeeded: int = 0
+    zero_comments: int = 0
+    failed: int = 0
+    comments: int = 0
+    errors: dict[str, str] | None = None
+
+    @property
+    def complete(self) -> bool:
+        return self.failed == 0 and self.succeeded == self.requested
+
+
 async def _fetch_comments_parallel(
     client: RedditClient, store: Store, posts: list[dict], sort: str, label: str
-) -> int:
+) -> CommentFetchResult:
     if not posts:
-        return 0
-    sem = asyncio.Semaphore(client.cfg.concurrency)
-    total = 0
+        return CommentFetchResult(errors={})
+    concurrency = getattr(getattr(client, "cfg", None), "concurrency", 1)
+    sem = asyncio.Semaphore(max(1, concurrency))
 
-    async def worker(p: dict) -> int:
+    async def worker(p: dict) -> tuple[str, int | None, str | None]:
+        post_id = str(p.get("id") or "<missing-id>")
         async with sem:
             try:
                 comments = await fetch_comments_for_post(client, p, sort)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("comments failed for %s: %s", p.get("id"), exc)
-                return 0
-        store.upsert_comments(comments, retrieved_from=label)
-        return len(comments)
+                return post_id, None, f"{type(exc).__name__}: {exc}"
+        try:
+            store.upsert_comments(comments, retrieved_from=label)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("comment persistence failed for %s: %s", post_id, exc)
+            return post_id, None, f"{type(exc).__name__}: {exc}"
+        return post_id, len(comments), None
 
     tasks = [asyncio.create_task(worker(p)) for p in posts]
+    succeeded = 0
+    zero_comments = 0
+    failed = 0
+    total = 0
+    errors: dict[str, str] = {}
     with tqdm(total=len(tasks), desc=label, unit="post") as pbar:
         for fut in asyncio.as_completed(tasks):
             try:
-                n = await fut
+                post_id, n, error = await fut
             except Exception as exc:  # noqa: BLE001
-                n = 0
                 logger.warning("worker error: %s", exc)
-            total += n
+                post_id, n, error = "<worker>", None, f"{type(exc).__name__}: {exc}"
+            if error is not None or n is None:
+                failed += 1
+                errors[post_id] = error or "unknown comment failure"
+            else:
+                succeeded += 1
+                total += n
+                if n == 0:
+                    zero_comments += 1
             pbar.update(1)
-    return total
+    return CommentFetchResult(
+        requested=len(posts),
+        succeeded=succeeded,
+        zero_comments=zero_comments,
+        failed=failed,
+        comments=total,
+        errors=errors,
+    )
 
 
 @dataclass(frozen=True)
 class ArchiveResult:
     results: dict[str, CoverageResult]
-    comment_count: int = 0
+    comment_result: CommentFetchResult | None = None
 
     @property
     def complete(self) -> bool:
-        return bool(self.results) and all(result.complete for result in self.results.values())
+        posts_complete = bool(self.results) and all(
+            result.complete for result in self.results.values()
+        )
+        return posts_complete and (
+            self.comment_result is None or self.comment_result.complete
+        )
+
+    @property
+    def comment_count(self) -> int:
+        return self.comment_result.comments if self.comment_result else 0
 
     @property
     def post_count(self) -> int:
@@ -236,12 +283,12 @@ async def archive(
         for post in result.posts:
             collected[post["id"]] = post
 
-    comment_count = 0
+    comment_result: CommentFetchResult | None = None
     complete = bool(results) and all(result.complete for result in results.values())
     if complete and with_comments:
         if reddit is None:
             raise RuntimeError("authenticated Reddit sessions are required for comments")
-        comment_count = await _fetch_comments_parallel(
+        comment_result = await _fetch_comments_parallel(
             reddit,
             store,
             list(collected.values()),
@@ -249,7 +296,7 @@ async def archive(
             label="comments",
         )
 
-    return ArchiveResult(results=results, comment_count=comment_count)
+    return ArchiveResult(results=results, comment_result=comment_result)
 
 
 async def search(
@@ -303,10 +350,14 @@ async def search(
     print(f"Search '{query}' -> {len(posts)} posts in {time.time() - t0:.1f}s")
 
     if with_comments:
-        n_comments = await _fetch_comments_parallel(
+        comment_result = await _fetch_comments_parallel(
             client, store, list(posts.values()), comment_sort, label="comments"
         )
-        print(f"Fetched {n_comments} comments in {time.time() - t0:.1f}s")
+        print(
+            f"Fetched {comment_result.comments} comments from "
+            f"{comment_result.succeeded}/{comment_result.requested} posts "
+            f"({comment_result.failed} failed) in {time.time() - t0:.1f}s"
+        )
 
 
 async def monitor(

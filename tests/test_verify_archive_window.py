@@ -50,3 +50,23 @@ def test_main_returns_nonzero_when_database_contains_out_of_window_rows(tmp_path
 
     assert status == 1
     assert json.loads(capsys.readouterr().out)["out_of_window_posts"] == 1
+
+
+def test_main_can_require_nonempty_and_expected_subreddits(tmp_path: Path, capsys) -> None:
+    db = tmp_path / "archive.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE posts (id TEXT, subreddit TEXT, created_utc REAL)")
+    conn.commit()
+    conn.close()
+
+    status = verify.main([
+        "--db", str(db),
+        "--after", "1970-01-01T00:01:40+00:00",
+        "--before", "1970-01-01T00:03:20+00:00",
+        "--require-nonempty",
+        "--expected-subs", "A,B",
+    ])
+
+    result = json.loads(capsys.readouterr().out)
+    assert status == 1
+    assert result["verification"]["missing_expected_subreddits"] == ["a", "b"]

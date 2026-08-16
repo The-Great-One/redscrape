@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 
 import pandas as pd
+import pytest
 
 from scripts import analyze_indian_stock_calls as analysis
 
@@ -157,10 +158,51 @@ def test_main_never_emits_automatic_username_rankings(tmp_path: Path, monkeypatc
     ])
     monkeypatch.setattr(analysis, "load_master", lambda _path: ({}, {}))
     monkeypatch.setattr(analysis, "load_documents", lambda *_args: [])
-    monkeypatch.setattr(analysis, "download_prices", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        analysis,
+        "download_prices",
+        lambda *_args, **_kwargs: analysis.PriceDownload(
+            series={
+                "^NSEI": pd.Series(
+                    [100.0, 101.0],
+                    index=pd.to_datetime(["2025-08-18", "2026-08-14"]),
+                )
+            },
+            requested=("^NSEI",),
+            missing=(),
+            errors={},
+        ),
+    )
 
     result = analysis.main(config)
 
     assert result["users_min_3_scored_calls"] == []
     assert "heuristic_users_min_3_calls_DO_NOT_RANK" not in result
     assert result["accuracy_conclusion"].startswith("No username ranking")
+
+
+def test_main_fails_closed_when_nifty_download_is_missing(tmp_path: Path, monkeypatch) -> None:
+    config = analysis.parse_args([
+        "--db", str(tmp_path / "study.sqlite"),
+        "--master", str(tmp_path / "master.txt"),
+        "--start", "2025-08-17",
+        "--end", "2026-08-17",
+        "--output-prefix", str(tmp_path / "result"),
+    ])
+    monkeypatch.setattr(analysis, "load_master", lambda _path: ({}, {}))
+    monkeypatch.setattr(analysis, "load_documents", lambda *_args: [])
+    monkeypatch.setattr(
+        analysis,
+        "download_prices",
+        lambda *_args, **_kwargs: analysis.PriceDownload(
+            series={},
+            requested=("^NSEI",),
+            missing=("^NSEI",),
+            errors={"^NSEI": "download failed"},
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="NIFTY"):
+        analysis.main(config)
+
+    assert not config.output_json.exists()

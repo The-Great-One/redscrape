@@ -36,6 +36,14 @@ class Config:
     timezone: str
 
 
+@dataclass(frozen=True)
+class PriceDownload:
+    series: dict[str, pd.Series]
+    requested: tuple[str, ...]
+    missing: tuple[str, ...]
+    errors: dict[str, str]
+
+
 def _local_day(date_text: str, timezone_name: str) -> datetime:
     local = datetime.strptime(date_text, '%Y-%m-%d').replace(tzinfo=ZoneInfo(timezone_name))
     return local.astimezone(timezone.utc)
@@ -265,13 +273,15 @@ def window_metrics(
     }
 
 
-def download_prices(symbols: list[str], start: datetime = START, end: datetime = END) -> dict[str, pd.Series]:
+def download_prices(symbols: list[str], start: datetime = START, end: datetime = END) -> PriceDownload:
     tickers = ['^NSEI'] + [f'{s}.NS' for s in symbols]
     out: dict[str, pd.Series] = {}
+    errors: dict[str, str] = {}
     # Small sequential batches avoid yfinance/curl_cffi thread and cookie-cache failures.
     for batch_start in range(0, len(tickers), 35):
         batch = tickers[batch_start:batch_start + 35]
         raw = None
+        batch_problem = 'empty response'
         for attempt in range(3):
             try:
                 download_start = (start - timedelta(days=2)).date().isoformat()
@@ -280,9 +290,13 @@ def download_prices(symbols: list[str], start: datetime = START, end: datetime =
                                   progress=False, threads=False, group_by='ticker', timeout=45)
                 if raw is not None and not raw.empty:
                     break
-            except Exception:
+                batch_problem = 'empty response'
+            except Exception as exc:
+                batch_problem = f'{type(exc).__name__}: {exc}'
                 raw = None
         if raw is None or raw.empty:
+            for ticker in batch:
+                errors[ticker] = batch_problem
             continue
         for ticker in batch:
             try:
@@ -294,7 +308,15 @@ def download_prices(symbols: list[str], start: datetime = START, end: datetime =
                 s = pd.Series(dtype=float)
             if not s.empty:
                 out[ticker] = s
-    return out
+            else:
+                errors[ticker] = 'ticker missing from non-empty batch response'
+    missing = tuple(ticker for ticker in tickers if ticker not in out)
+    return PriceDownload(
+        series=out,
+        requested=tuple(tickers),
+        missing=missing,
+        errors={ticker: errors.get(ticker, 'no usable close series') for ticker in missing},
+    )
 
 
 def score_calls(
@@ -368,7 +390,11 @@ def main(config: Config | None = None) -> dict:
 
     # Limit market downloads to meaningful mentions/calls, then score all retained calls.
     meaningful = sorted({s for s, n in mentions.items() if n >= 2} | {c['symbol'] for c in calls})
-    prices = download_prices(meaningful, config.start, config.end)
+    price_download = download_prices(meaningful, config.start, config.end)
+    prices = price_download.series
+    if '^NSEI' not in prices or prices['^NSEI'].empty:
+        reason = price_download.errors.get('^NSEI', 'no usable close series')
+        raise RuntimeError(f'NIFTY benchmark data unavailable: {reason}')
     nifty = prices.get('^NSEI', pd.Series(dtype=float))
 
     # Deduplicate repeated same-user/symbol/direction calls inside 14 days.
@@ -387,6 +413,11 @@ def main(config: Config | None = None) -> dict:
         eval_cutoff=config.end - timedelta(days=30),
         timezone_name=config.timezone,
     )
+    recent_call_count = sum(
+        call['created_utc'] > (config.end - timedelta(days=30)).timestamp()
+        for call in deduped
+    )
+    mature_unpriced_call_count = len(deduped) - recent_call_count - len(scored)
 
     interest_rows = []
     benchmark_window = window_metrics(
@@ -443,11 +474,19 @@ def main(config: Config | None = None) -> dict:
             'accuracy': 'Only calls at least 30 calendar days old. Direction hit tests sign of adjusted 30-day return; alpha hit tests directional excess return versus NIFTY 50.',
             'caveat': 'These are heuristic candidates, not validated recommendations. Manual review is required for prospective intent, attribution, negation, horizon, sarcasm, and questions before any username accuracy claim.',
         },
+        'market_data': {
+            'requested_tickers': list(price_download.requested),
+            'downloaded_tickers': sorted(price_download.series),
+            'missing_tickers': list(price_download.missing),
+            'errors': price_download.errors,
+            'complete': not price_download.missing,
+        },
         'interest': interest_rows,
         'users_min_3_scored_calls': [],
         'accuracy_conclusion': 'No username ranking is defensible without manual validation of prospective intent, attribution, negation, and horizon.',
         'scored_calls': scored,
-        'unscored_recent_or_missing_price_calls': len(deduped) - len(scored),
+        'unscored_recent_calls': recent_call_count,
+        'unscored_mature_price_unavailable_calls': mature_unpriced_call_count,
         'deduped_explicit_calls': len(deduped),
     }
     config.output_json.parent.mkdir(parents=True, exist_ok=True)

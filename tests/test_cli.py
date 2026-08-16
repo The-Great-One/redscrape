@@ -79,7 +79,7 @@ def test_archive_command_converts_timezone_and_returns_partial_exit_code(
             concurrency=concurrency,
         )
         failed = CoverageResult("python", complete=False, error="failed")
-        return ArchiveResult(results={"python": failed}, comment_count=0)
+        return ArchiveResult(results={"python": failed})
 
     monkeypatch.setattr(cli, "ArcticShiftClient", FakeArctic)
     monkeypatch.setattr(cli, "archive", fake_archive)

@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 from redscrape.arctic import CoverageResult, IncompleteCoverageError
-from redscrape.engine import archive
+from redscrape.engine import CommentFetchResult, _fetch_comments_parallel, archive
 from redscrape.storage import Store
 from redscrape.timewindow import TimeWindow
 
@@ -50,7 +50,9 @@ def test_archive_persists_pages_and_comments_only_collected_posts(
     async def fake_comments(_reddit, _store, posts, _sort, label):
         comment_posts.extend(posts)
         assert label == "comments"
-        return 7
+        return CommentFetchResult(
+            requested=2, succeeded=2, comments=7, errors={}
+        )
 
     monkeypatch.setattr("redscrape.engine._fetch_comments_parallel", fake_comments)
     result = asyncio.run(
@@ -88,7 +90,7 @@ def test_one_subreddit_failure_is_partial_and_preserves_successful_pages(
     async def fake_comments(*_args, **_kwargs):
         nonlocal comments_called
         comments_called = True
-        return 0
+        return CommentFetchResult(errors={})
 
     monkeypatch.setattr("redscrape.engine._fetch_comments_parallel", fake_comments)
     result = asyncio.run(
@@ -114,3 +116,34 @@ def test_one_subreddit_failure_is_partial_and_preserves_successful_pages(
     assert result.results["golang"].complete is False
     assert result.results["golang"].error == "upstream failed"
     assert comments_called is False
+
+
+def test_comment_fetch_reports_zero_comment_success_and_failures(tmp_path: Path, monkeypatch) -> None:
+    store = Store(tmp_path / "comments.sqlite")
+
+    async def fake_fetch(_client, item, _sort):
+        if item["id"] == "failed":
+            raise RuntimeError("rate limited")
+        return []
+
+    monkeypatch.setattr("redscrape.engine.fetch_comments_for_post", fake_fetch)
+    result = asyncio.run(
+        _fetch_comments_parallel(
+            object(),
+            store,
+            [post("empty", "python", 100), post("failed", "python", 101)],
+            "best",
+            "comments",
+        )
+    )
+    store.close()
+
+    assert result == CommentFetchResult(
+        requested=2,
+        succeeded=1,
+        zero_comments=1,
+        failed=1,
+        comments=0,
+        errors={"failed": "RuntimeError: rate limited"},
+    )
+    assert result.complete is False

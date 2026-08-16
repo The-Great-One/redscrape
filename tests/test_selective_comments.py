@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from scripts import selective_stock_comments as selective
+from redscrape.engine import CommentFetchResult
 
 
 def make_db(path: Path) -> None:
@@ -51,3 +52,21 @@ def test_parse_args_converts_ist_dates_to_exact_utc_bounds(tmp_path: Path) -> No
     assert config.after == 1755369000
     assert config.before == 1786905000
     assert config.limit == 600
+
+
+def test_comment_summary_marks_thread_failures_partial() -> None:
+    result = selective.summarize_comments(
+        CommentFetchResult(
+            requested=3,
+            succeeded=2,
+            zero_comments=1,
+            failed=1,
+            comments=8,
+            errors={"p3": "HTTP 429"},
+        ),
+        {"posts": 10, "comments": 8, "subreddits": 1},
+    )
+
+    assert result["complete"] is False
+    assert result["failed_posts"] == 1
+    assert result["errors"] == {"p3": "HTTP 429"}

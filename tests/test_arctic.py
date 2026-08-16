@@ -25,6 +25,7 @@ def client_for(
     retries: int = 3,
     page_size: int = 2,
     empty_confirmations: int = 1,
+    verify_timestamp_buckets: bool = False,
 ) -> ArcticShiftClient:
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return ArcticShiftClient(
@@ -32,6 +33,7 @@ def client_for(
         retries=retries,
         page_size=page_size,
         empty_confirmations=empty_confirmations,
+        verify_timestamp_buckets=verify_timestamp_buckets,
         sleep=lambda _delay: asyncio.sleep(0),
     )
 
@@ -265,4 +267,49 @@ def test_page_persistence_failure_returns_accumulated_partial_result() -> None:
     asyncio.run(client.close())
 
     assert [item["id"] for item in caught.value.result.posts] == ["a"]
+    assert caught.value.result.complete is False
+
+
+def test_full_page_timestamp_bucket_recovers_hidden_tied_posts() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        after = float(request.url.params["after"])
+        before = float(request.url.params["before"])
+        if after == 99 and before == 200:
+            return httpx.Response(200, json={
+                "data": [post("a", 100), post("a2", 100), post("b", 101), post("b2", 101)]
+            })
+        if after == 100 and before == 102:
+            return httpx.Response(200, json={
+                "data": [post("b", 101), post("b2", 101), post("hidden", 101)]
+            })
+        return httpx.Response(200, json={"data": []})
+
+    client = client_for(
+        handler,
+        page_size=4,
+        empty_confirmations=1,
+        verify_timestamp_buckets=True,
+    )
+    result = asyncio.run(client.fetch_subreddit("python", TimeWindow(100, 200)))
+    asyncio.run(client.close())
+
+    assert [item["id"] for item in result.posts] == ["a", "a2", "b", "b2", "hidden"]
+    assert result.complete is True
+
+
+def test_saturated_timestamp_bucket_fails_closed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        after = float(request.url.params["after"])
+        before = float(request.url.params["before"])
+        if after == 99 and before == 200:
+            return httpx.Response(200, json={"data": [post("a", 100), post("b", 101)]})
+        if after == 100 and before == 102:
+            return httpx.Response(200, json={"data": [post("b", 101), post("hidden", 101)]})
+        raise AssertionError(request.url)
+
+    client = client_for(handler, verify_timestamp_buckets=True)
+    with pytest.raises(IncompleteCoverageError, match="timestamp bucket saturated") as caught:
+        asyncio.run(client.fetch_subreddit("python", TimeWindow(100, 200)))
+    asyncio.run(client.close())
+
     assert caught.value.result.complete is False

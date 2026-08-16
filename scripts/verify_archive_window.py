@@ -67,15 +67,38 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--before", required=True)
     parser.add_argument("--timezone", default="UTC")
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--require-nonempty",
+        action="store_true",
+        help="fail if the requested interval contains no posts",
+    )
+    parser.add_argument(
+        "--expected-subs",
+        help="comma-separated subreddit names that must all be present",
+    )
     args = parser.parse_args(argv)
     window = parse_time_window(args.after, args.before, args.timezone)
     result = summarize(args.db, after=window.after, before=window.before)
+    expected = {
+        value.strip().casefold()
+        for value in (args.expected_subs or "").split(",")
+        if value.strip()
+    }
+    present = {value.casefold() for value in result["subreddits"]}
+    missing_subs = sorted(expected - present)
+    result["verification"] = {
+        "require_nonempty": args.require_nonempty,
+        "missing_expected_subreddits": missing_subs,
+    }
     text = json.dumps(result, indent=2, sort_keys=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(text + "\n")
     print(text)
-    return 1 if result["out_of_window_posts"] else 0
+    failed = bool(result["out_of_window_posts"] or missing_subs)
+    if args.require_nonempty and result["in_window_posts"] == 0:
+        failed = True
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

@@ -20,5 +20,11 @@ analysis = ["pandas>=2.2", "yfinance>=1.0"]
 [project.scripts]
 redscrape = "redscrape.cli:main"
 
+[dependency-groups]
+dev = ["pytest>=8", "pandas>=2.2", "yfinance>=1.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
 [tool.setuptools]
 packages = ["redscrape"]

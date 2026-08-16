@@ -87,6 +87,15 @@ def _print_archive_result(result: ArchiveResult, window: TimeWindow) -> None:
     print(
         f"Posts: {result.post_count} | Comments: {result.comment_count} | Coverage: {status}"
     )
+    if result.comment_result is not None:
+        comments = result.comment_result
+        print(
+            "Comment threads: "
+            f"{comments.succeeded}/{comments.requested} succeeded, "
+            f"{comments.zero_comments} empty, {comments.failed} failed"
+        )
+        for post_id, error in sorted((comments.errors or {}).items()):
+            print(f"  - {post_id}: {error}")
 
 
 def _cmd_archive(args: argparse.Namespace) -> int:

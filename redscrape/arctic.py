@@ -52,6 +52,7 @@ class ArcticShiftClient:
         page_size: int = 100,
         timeout: float = 60.0,
         empty_confirmations: int = 3,
+        verify_timestamp_buckets: bool = True,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         now: Callable[[], float] = time.time,
     ) -> None:
@@ -64,6 +65,7 @@ class ArcticShiftClient:
         self.retries = retries
         self.page_size = page_size
         self.empty_confirmations = empty_confirmations
+        self.verify_timestamp_buckets = verify_timestamp_buckets
         self._sleep = sleep
         self._now = now
         self._client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(timeout))
@@ -94,7 +96,7 @@ class ArcticShiftClient:
             return max(0.0, retry_at - self._now())
 
     async def _request_page(
-        self, subreddit: str, cursor: float, before: float
+        self, subreddit: str, cursor: float, before: float, *, limit: int | None = None
     ) -> list[dict[str, Any]]:
         last_problem = "unknown failure"
         for attempt in range(self.retries):
@@ -106,7 +108,7 @@ class ArcticShiftClient:
                         "after": self._epoch_param(cursor),
                         "before": self._epoch_param(before),
                         "sort": "asc",
-                        "limit": self.page_size,
+                        "limit": limit or self.page_size,
                     },
                 )
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
@@ -226,6 +228,53 @@ class ArcticShiftClient:
                 message = "page timestamps are not in ascending order"
                 raise IncompleteCoverageError(message, partial(message))
 
+            in_range_timestamps = [timestamp for timestamp in timestamps if timestamp < window.before]
+            if not in_range_timestamps:
+                message = "page contained no timestamp that can safely advance pagination"
+                raise IncompleteCoverageError(message, partial(message))
+            next_cursor = max(in_range_timestamps)
+            if max(timestamps) >= window.before and len(rows) >= self.page_size:
+                message = "full page reached upper bound without a final short page"
+                raise IncompleteCoverageError(message, partial(message))
+
+            # ``after`` is exclusive. Before advancing past the timestamp at the
+            # end of a full page, retrieve that one-second bucket independently.
+            # A non-full bucket proves every tied post was observed; a saturated
+            # bucket has no stable tie-break cursor, so fail rather than skip.
+            if self.verify_timestamp_buckets and len(rows) >= self.page_size:
+                bucket_before = min(window.before, next_cursor + 1)
+                try:
+                    bucket_rows = await self._request_page(
+                        subreddit,
+                        next_cursor - 1,
+                        bucket_before,
+                        limit=self.page_size,
+                    )
+                    pages += 1
+                    bucket = [self._normalize(row, subreddit) for row in bucket_rows]
+                except Exception as exc:
+                    message = f"timestamp bucket verification failed: {exc}"
+                    raise IncompleteCoverageError(message, partial(message)) from exc
+                if len(bucket_rows) >= self.page_size:
+                    message = "timestamp bucket saturated without a stable tie-break cursor"
+                    raise IncompleteCoverageError(message, partial(message))
+                if any(timestamp != next_cursor for _post, timestamp in bucket):
+                    message = "timestamp bucket returned an unexpected timestamp"
+                    raise IncompleteCoverageError(message, partial(message))
+                page_end_ids = {
+                    post["id"] for post, timestamp in page if timestamp == next_cursor
+                }
+                bucket_ids = {post["id"] for post, _timestamp in bucket}
+                if not page_end_ids.issubset(bucket_ids):
+                    message = "timestamp bucket did not reproduce the page-ending posts"
+                    raise IncompleteCoverageError(message, partial(message))
+                page_ids = {post["id"] for post, _timestamp in page}
+                page.extend(
+                    (post, timestamp)
+                    for post, timestamp in bucket
+                    if post["id"] not in page_ids
+                )
+
             new_posts: list[dict[str, Any]] = []
             for normalized, timestamp in page:
                 if window.after <= timestamp < window.before and normalized["id"] not in seen:
@@ -243,14 +292,6 @@ class ArcticShiftClient:
                     message = f"page persistence failed: {exc}"
                     raise IncompleteCoverageError(message, partial(message)) from exc
 
-            in_range_timestamps = [timestamp for timestamp in timestamps if timestamp < window.before]
-            if not in_range_timestamps:
-                message = "page contained no timestamp that can safely advance pagination"
-                raise IncompleteCoverageError(message, partial(message))
-            next_cursor = max(in_range_timestamps)
-            if max(timestamps) >= window.before and len(rows) >= self.page_size:
-                message = "full page reached upper bound without a final short page"
-                raise IncompleteCoverageError(message, partial(message))
             if next_cursor <= cursor or not new_posts:
                 message = "pagination stalled without a safely advancing page"
                 raise IncompleteCoverageError(message, partial(message))
