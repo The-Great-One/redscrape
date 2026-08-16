@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 
 from tqdm import tqdm
 
+from .arctic import ArcticShiftClient, CoverageResult, IncompleteCoverageError
 from .client import RedditClient
 from .storage import Store
+from .timewindow import TimeWindow
 
 logger = logging.getLogger("redscrape")
 
@@ -177,73 +180,76 @@ async def _fetch_comments_parallel(
     return total
 
 
-async def _collect_posts(
-    client: RedditClient,
-    subs: list[str],
-    listing: str,
-    limit: int,
-    t: str | None,
-) -> dict[str, dict]:
-    """Page listings for all subs concurrently; return deduped posts by id."""
-    lock = asyncio.Lock()
-    posts: dict[str, dict] = {}
-    # Bound concurrent subreddit workers — a large sub list otherwise fires
-    # every sub at once (gather ignores the shared request semaphore) and
-    # trips Reddit's anti-bot 403.
-    sem = asyncio.Semaphore(client.cfg.concurrency)
+@dataclass(frozen=True)
+class ArchiveResult:
+    results: dict[str, CoverageResult]
+    comment_count: int = 0
 
-    async def one_sub(sub: str) -> None:
-        after: str | None = None
-        remaining = limit
-        while remaining > 0:
-            page = await client.get_subreddit(
-                sub, sort=listing, limit=min(100, remaining), after=after, t=t
-            )
-            if not page:
-                break
-            children = page.get("data", {}).get("children", [])
-            async with lock:
-                for ch in children:
-                    p = ch.get("data", {})
-                    if p.get("id"):
-                        posts[p["id"]] = p
-            after = page.get("data", {}).get("after")
-            remaining -= len(children)
-            if not after or not children:
-                break
+    @property
+    def complete(self) -> bool:
+        return bool(self.results) and all(result.complete for result in self.results.values())
 
-    async def bounded(s: str) -> None:
-        try:
-            async with sem:
-                await one_sub(s)
-        except Exception as exc:  # noqa: BLE001 — one bad sub (e.g. quarantined 403) must not abort the batch
-            logger.warning("sub '%s' failed: %s", s, exc)
-
-    await asyncio.gather(*(bounded(s) for s in subs))
-    return posts
+    @property
+    def post_count(self) -> int:
+        return len({post["id"] for result in self.results.values() for post in result.posts})
 
 
 async def archive(
-    client: RedditClient,
+    arctic: ArcticShiftClient,
+    reddit: RedditClient | None,
     store: Store,
     subs: list[str],
-    listing: str,
-    limit: int,
-    t: str | None,
+    window: TimeWindow,
+    *,
     with_comments: bool,
     comment_sort: str,
-) -> None:
-    t0 = time.time()
-    posts = await _collect_posts(client, subs, listing, limit, t)
-    n_posts = store.upsert_posts(posts.values(), retrieved_from=f"archive:{listing}")
-    print(f"Collected {len(posts)} unique posts ({n_posts} inserted/updated) "
-          f"in {time.time() - t0:.1f}s")
+    concurrency: int,
+) -> ArchiveResult:
+    """Collect exact post windows and optionally expand their Reddit comments."""
 
-    if with_comments:
-        n_comments = await _fetch_comments_parallel(
-            client, store, list(posts.values()), comment_sort, label="comments"
+    sem = asyncio.Semaphore(max(1, concurrency))
+    results: dict[str, CoverageResult] = {}
+
+    async def one_sub(subreddit: str) -> tuple[str, CoverageResult]:
+        async def persist_page(posts: list[dict]) -> None:
+            store.upsert_posts(posts, retrieved_from="arctic-shift:posts")
+
+        try:
+            async with sem:
+                result = await arctic.fetch_subreddit(
+                    subreddit, window, on_page=persist_page
+                )
+        except IncompleteCoverageError as exc:
+            result = exc.result
+        except Exception as exc:  # fail closed on any unexpected upstream failure
+            message = str(exc) or type(exc).__name__
+            result = CoverageResult(
+                subreddit=subreddit, complete=False, error=message
+            )
+        return subreddit, result
+
+    for subreddit, result in await asyncio.gather(*(one_sub(sub) for sub in subs)):
+        results[subreddit] = result
+
+    collected: dict[str, dict] = {}
+    for result in results.values():
+        for post in result.posts:
+            collected[post["id"]] = post
+
+    comment_count = 0
+    complete = bool(results) and all(result.complete for result in results.values())
+    if complete and with_comments:
+        if reddit is None:
+            raise RuntimeError("authenticated Reddit sessions are required for comments")
+        comment_count = await _fetch_comments_parallel(
+            reddit,
+            store,
+            list(collected.values()),
+            comment_sort,
+            label="comments",
         )
-        print(f"Fetched {n_comments} comments in {time.time() - t0:.1f}s")
+
+    return ArchiveResult(results=results, comment_count=comment_count)
 
 
 async def search(

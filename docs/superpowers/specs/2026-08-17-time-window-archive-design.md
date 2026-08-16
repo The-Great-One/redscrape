@@ -96,7 +96,7 @@ Replace listing-based archive collection with time-window orchestration:
 
 ## Completion Semantics
 
-A subreddit is complete only when Arctic Shift returns an empty/final short page after monotonic pagination through the requested upper bound.
+A subreddit is complete only after monotonic pagination and repeated confirmation that no rows remain. A live 2026-08-17 probe returned one transient empty page at a cursor and then returned later rows when the identical request was retried. Therefore a short page advances normally, and an empty page must be confirmed three consecutive times at the same cursor before declaring completion.
 
 The command must never print or imply complete coverage when:
 

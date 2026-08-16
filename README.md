@@ -56,8 +56,9 @@ redscrape accounts                        # list discovered sessions
 redscrape import-cookies cookies.txt --name alt --user myaltusername
 redscrape import-cookies ~/.rdt-cookies.json --name work
 
-# then just run as normal — the pool rotates automatically
-redscrape archive "python,golang,rust" --limit 200 --comments
+# then run an exact historical window — the pool is used only for comments
+redscrape archive "python,golang,rust" \
+  --after 2026-08-01 --before 2026-08-02 --timezone UTC --comments
 ```
 
 Add sessions by:
@@ -99,11 +100,17 @@ only recover from files or a browser.
 ## Usage
 
 ```bash
-# Bulk historical archive — 100 posts from each of 3 subs + full comments
-redscrape archive "python,golang,rust" --listing new --limit 100 --comments
+# Exact historical archive. Date-only bounds are midnight in the chosen zone.
+redscrape archive "python,golang,rust" \
+  --after 2026-08-01 --before 2026-08-08 --timezone UTC --comments
 
-# Top of the month, no comments
-redscrape archive "stocks,investing" --listing top --time month --limit 50
+# India-local dates become UTC instants before retrieval; comments are optional.
+redscrape archive "stocks,investing" \
+  --after 2026-05-16 --before 2026-08-16 --timezone Asia/Kolkata
+
+# Explicit-offset ISO timestamps are also accepted.
+redscrape archive "python" \
+  --after 2026-08-01T09:00:00+05:30 --before 2026-08-01T18:00:00+05:30
 
 # Keyword research across many subs (gap-analysis at scale)
 redscrape search "is there an app" --subs SomebodyMakeThis,AppIdeas,IndiaTax --comments
@@ -115,6 +122,29 @@ redscrape monitor "python,golang" --interval 300 --comments
 redscrape export --format jsonl --out redscrape_dump
 redscrape export --format parquet            # needs [parquet] extra
 ```
+
+### Exact archive semantics
+
+`archive` requires both `--after` and `--before` and always uses the half-open
+interval **`[after, before)`**: a post exactly at `after` is included, while one
+exactly at `before` is excluded. Date-only bounds mean midnight in
+`--timezone` (default `UTC`); the timezone must be an IANA name such as
+`Asia/Kolkata`. Offset-aware ISO-8601 timestamps represent their own instant and
+do not use `--timezone`.
+
+Historical posts come from the public Arctic Shift archive API, not Reddit's
+capped listing pages. Each page is filtered locally to the requested interval,
+deduplicated by post ID, and upserted immediately, so rows already fetched
+survive an interrupted run. The final table reports count, oldest/newest UTC
+timestamps, and completion separately for every subreddit. Retry exhaustion,
+malformed responses, or stalled pagination marks coverage **incomplete** and
+makes the command exit with status 1; rerunning safely resumes through SQLite
+upserts. Partial coverage is never reported as complete.
+
+`--comments` runs only after every subreddit finishes post collection. Comment
+trees are then fetched only for the collected in-window posts through the
+existing authenticated Reddit session pool. Posts-only archives need no Reddit
+login.
 
 ### Common flags
 
@@ -144,15 +174,17 @@ item, so nothing is lost.
 
 ## Performance notes (measured 2026-08)
 
+- Exact historical post windows use Arctic Shift with pages of up to 100 posts;
+  no Reddit account or Reddit listing-depth approximation is involved.
+- Arctic Shift 422/429/transient 5xx responses are retried with bounded backoff.
+  A failed or stalled subreddit remains explicitly incomplete even though pages
+  already written to SQLite are retained.
 - Reddit cookie-auth ceiling is **~100 requests per ~250s window (~24/min)**.
-  The default `--rpm 20` stays safely under it; the adaptive throttle absorbs
-  bursts if you push higher.
-- Comments are 1 request per post, so they dominate wall-clock: at ~20/min,
-  ~1000 posts → ~50 min. Posts-only listing is much faster (100 posts = 1
-  request).
-- For *historical* bulk beyond what the live API paginates, pair with
-  arctic-shift (Pushshift replacement): `arctic-shift.photon-reddit.com/api`
-  (posts + comments, no auth) — this tool targets live/current data.
+  The default `--rpm 20` stays safely under it; this matters for search,
+  monitoring, and optional archive comment expansion.
+- Comments are at least 1 Reddit request per post, so they dominate wall-clock:
+  at ~20/min, ~1000 posts takes at least ~50 min before `morechildren` calls.
+  Fetch posts first and opt into `--comments` only when needed.
 
 ## Notes / pitfalls
 

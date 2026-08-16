@@ -6,20 +6,32 @@ import argparse
 import asyncio
 import logging
 import sys
+from datetime import datetime, timezone
 
 from .accounts import Account, load_accounts, parse_cookie_file, save_account
+from .arctic import ArcticShiftClient
 from .config import load_config
 from .pool import ClientPool
-from .engine import archive, monitor, search
+from .engine import ArchiveResult, archive, monitor, search
 from .refresh import refresh_all
 from .storage import Store
+from .timewindow import TimeWindow, parse_time_window
 
-LISTINGS = ["new", "hot", "top", "rising", "controversial"]
 TIME_FILTERS = ["hour", "day", "week", "month", "year", "all"]
 
 
 def _parse_subs(raw: str) -> list[str]:
-    return [s.strip().lstrip("r/").strip() for s in raw.split(",") if s.strip()]
+    parsed = []
+    for value in raw.split(","):
+        subreddit = value.strip()
+        lowered = subreddit.casefold()
+        if lowered.startswith("/r/"):
+            subreddit = subreddit[3:]
+        elif lowered.startswith("r/"):
+            subreddit = subreddit[2:]
+        if subreddit.strip():
+            parsed.append(subreddit.strip())
+    return parsed
 
 
 def _common(parser: argparse.ArgumentParser) -> None:
@@ -54,23 +66,73 @@ def _print_pool(pool: ClientPool) -> None:
             print(f"  - {a.summary()}")
 
 
+def _format_utc(timestamp: float | None) -> str:
+    if timestamp is None:
+        return "-"
+    return datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _print_archive_result(result: ArchiveResult, window: TimeWindow) -> None:
+    print("Subreddit             Posts  Oldest (UTC)         Newest (UTC)         Status")
+    for subreddit, coverage in result.results.items():
+        status = "complete" if coverage.complete else f"incomplete: {coverage.error or 'unknown'}"
+        print(
+            f"{subreddit:<21} {coverage.count:>6}  "
+            f"{_format_utc(coverage.oldest):<20} {_format_utc(coverage.newest):<20} {status}"
+        )
+    after = datetime.fromtimestamp(window.after, timezone.utc).isoformat().replace("+00:00", "Z")
+    before = datetime.fromtimestamp(window.before, timezone.utc).isoformat().replace("+00:00", "Z")
+    status = "complete" if result.complete else "incomplete"
+    print(f"\nInterval: [{after}, {before})")
+    print(
+        f"Posts: {result.post_count} | Comments: {result.comment_count} | Coverage: {status}"
+    )
+
+
 def _cmd_archive(args: argparse.Namespace) -> int:
+    try:
+        window = parse_time_window(args.after, args.before, args.timezone)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
     cfg = _build_config(args)
     store = Store(cfg.db_path)
     subs = _parse_subs(args.subs)
 
-    async def run() -> None:
-        async with ClientPool(cfg) as pool:
-            _print_pool(pool)
-            await archive(
-                pool, store, subs, args.listing, args.limit,
-                args.time, args.comments, args.comment_sort,
+    async def run() -> ArchiveResult:
+        async with ArcticShiftClient(retries=cfg.retries, timeout=cfg.timeout) as arctic:
+            if args.comments:
+                async with ClientPool(cfg) as pool:
+                    _print_pool(pool)
+                    return await archive(
+                        arctic,
+                        pool,
+                        store,
+                        subs,
+                        window,
+                        with_comments=True,
+                        comment_sort=args.comment_sort,
+                        concurrency=cfg.concurrency,
+                    )
+            return await archive(
+                arctic,
+                None,
+                store,
+                subs,
+                window,
+                with_comments=False,
+                comment_sort=args.comment_sort,
+                concurrency=cfg.concurrency,
             )
-        print(store.stats())
 
-    asyncio.run(run())
-    store.close()
-    return 0
+    try:
+        result = asyncio.run(run())
+        _print_archive_result(result, window)
+        print(store.stats())
+        return 0 if result.complete else 1
+    finally:
+        store.close()
 
 
 def _cmd_search(args: argparse.Namespace) -> int:
@@ -179,12 +241,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="command", required=True)
 
-    a = sub.add_parser("archive", help="bulk historical scrape")
+    a = sub.add_parser("archive", help="archive an exact historical time window")
     a.add_argument("subs", help="comma-separated subreddits (e.g. python,golang)")
-    a.add_argument("--listing", default="new", choices=LISTINGS)
-    a.add_argument("--limit", type=int, default=100, help="posts per subreddit")
-    a.add_argument("--time", choices=TIME_FILTERS, help="time filter for top/controversial")
-    a.add_argument("--comments", action="store_true", help="also fetch full comment trees")
+    a.add_argument("--after", required=True, help="inclusive date or offset-aware ISO timestamp")
+    a.add_argument("--before", required=True, help="exclusive date or offset-aware ISO timestamp")
+    a.add_argument("--timezone", default="UTC", help="IANA timezone for date-only bounds (default UTC)")
+    a.add_argument("--comments", action="store_true", help="also fetch full comment trees via authenticated Reddit sessions")
     _common(a)
     a.set_defaults(func=_cmd_archive)
 
