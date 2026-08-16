@@ -12,6 +12,8 @@ venv/
 # data / secrets
 *.db
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
 credentials.json
 config.json
 .DS_Store
