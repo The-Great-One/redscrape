@@ -137,17 +137,20 @@ capped listing pages. Each page is filtered locally to the requested interval,
 deduplicated by post ID, and upserted immediately, so rows already fetched
 survive an interrupted run. Short pages keep advancing; completion requires
 three consecutive empty responses at the same cursor because Arctic Shift can
-occasionally return a transient empty page. The final table reports count,
-oldest/newest UTC timestamps, and completion separately for every subreddit.
-Retry exhaustion, malformed responses, or stalled pagination marks coverage
-**incomplete** and makes the command exit with status 1. Rerunning safely
-repeats and upserts pages without duplicating stored rows; partial coverage is
-never reported as complete.
+occasionally return a transient empty page. Since Arctic Shift's `after` cursor
+is exclusive, every full page's final one-second timestamp bucket is fetched
+separately; a bucket that reaches the API limit fails closed rather than risking
+skipped tied posts. The final table reports count, oldest/newest UTC timestamps,
+and completion separately for every subreddit. Retry exhaustion, malformed
+responses, or stalled pagination marks coverage **incomplete** and makes the
+command exit with status 1. Rerunning safely repeats and upserts pages without
+duplicating stored rows; partial coverage is never reported as complete.
 
 `--comments` runs only after every subreddit finishes post collection. Comment
 trees are then fetched only for the collected in-window posts through the
-existing authenticated Reddit session pool. Posts-only archives need no Reddit
-login.
+existing authenticated Reddit session pool. The result distinguishes successful,
+zero-comment, and failed threads; any failed thread makes coverage incomplete
+and exits nonzero. Posts-only archives need no Reddit login.
 
 ### Common flags
 
