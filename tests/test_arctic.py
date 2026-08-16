@@ -61,6 +61,7 @@ def test_collects_multiple_ascending_pages_and_deduplicates_overlap() -> None:
     assert result.newest == 102
     assert calls[0].url.params["sort"] == "asc"
     assert calls[0].url.params["limit"] == "2"
+    assert calls[0].url.params["after"] == "99"
     assert calls[1].url.params["after"] == "101"
     assert calls[0].url.params["before"] == "200"
 

@@ -135,11 +135,14 @@ do not use `--timezone`.
 Historical posts come from the public Arctic Shift archive API, not Reddit's
 capped listing pages. Each page is filtered locally to the requested interval,
 deduplicated by post ID, and upserted immediately, so rows already fetched
-survive an interrupted run. The final table reports count, oldest/newest UTC
-timestamps, and completion separately for every subreddit. Retry exhaustion,
-malformed responses, or stalled pagination marks coverage **incomplete** and
-makes the command exit with status 1; rerunning safely resumes through SQLite
-upserts. Partial coverage is never reported as complete.
+survive an interrupted run. Short pages keep advancing; completion requires
+three consecutive empty responses at the same cursor because Arctic Shift can
+occasionally return a transient empty page. The final table reports count,
+oldest/newest UTC timestamps, and completion separately for every subreddit.
+Retry exhaustion, malformed responses, or stalled pagination marks coverage
+**incomplete** and makes the command exit with status 1. Rerunning safely
+repeats and upserts pages without duplicating stored rows; partial coverage is
+never reported as complete.
 
 `--comments` runs only after every subreddit finishes post collection. Comment
 trees are then fetched only for the collected in-window posts through the

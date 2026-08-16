@@ -177,7 +177,10 @@ class ArcticShiftClient:
     ) -> CoverageResult:
         """Fetch one subreddit, raising with its partial result if proof fails."""
 
-        cursor = window.after
+        # Arctic Shift's ``after`` filter is strict while our interval start is
+        # inclusive. Reddit timestamps have one-second precision, so begin one
+        # second earlier and enforce the exact boundary locally.
+        cursor = window.after - 1
         pages = 0
         seen: dict[str, dict[str, Any]] = {}
         oldest: float | None = None
