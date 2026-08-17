@@ -17,3 +17,9 @@ venv/
 credentials.json
 config.json
 .DS_Store
+indian-stock-reddit-*.sqlite*
+one-year-analysis.json
+one-year-heuristic-candidates.csv
+one-year-validated-calls.csv
+one-year-validation-input.jsonl
+nse-equity-master.txt
