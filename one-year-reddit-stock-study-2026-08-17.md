@@ -57,64 +57,66 @@ NIFTY 50 over the same window: **-2.05%** (last 30d +0.53%).
 
 ## 4. Manually validated prospective recommendations
 
-120 heuristic candidates with the strongest signal words were reviewed independently by three judges against full thread context (title, selftext, top comments). Rules: only explicit, forward-looking directional recommendations by the post author count; questions, retrospectives, news recaps, portfolio roasts, disclaimers ("not a recommendation"), and spam are rejected; direction is corrected to what the author actually expressed.
+All 353 heuristic candidates were reviewed independently by three judges (two batches of 120 + 233) against full thread context (title, selftext, top comments). Rules: only explicit, forward-looking directional recommendations by the post author count; questions, retrospectives, news recaps, portfolio roasts, disclaimers ("not a recommendation"), and spam are rejected; direction is corrected to what the author actually expressed.
 
-- **26 of 119 reviewed (22%) were genuine prospective calls** — 17 long, 9 short.
-- Results of the 26 validated calls (30-day horizon from next session):
+- **74 of 352 reviewed (21%) were genuine prospective calls** — 50 long, 24 short.
+- Results of the 74 validated calls (30-day horizon from next session):
 
 | Metric | Result |
 |---|---|
-| Direction hits | 11/26 (42%) |
-| Alpha hits (vs NIFTY, same dates) | 11/26 (42%) |
-| Long calls | 17 (7 hits, 41%) |
-| Short calls | 9 (4 hits, 44%) |
+| Direction hits | 35/74 (47%) |
+| Alpha hits (vs NIFTY, same dates) | 34/74 (46%) |
+| Long calls | 50 (23 hits, 46%) |
+| Short calls | 24 (12 hits, 50%) |
 
-Validated call log (symbol, dir, call date, author, hit?) — full table in `one-year-validated-calls.csv`:
+**Full call log (352 reviewed / 74 valid with per-call hit flags) is in `one-year-validated-calls.csv`.**
 
-```
-HSCL        long  2026-06-19  KSP4444              Y  (dir+alpha)
-CHAMBLFERT  long  2026-06-18  KSP4444              N
-PETRONET    long  2026-06-18  KSP4444              N
-BPCL        long  2026-06-15  KSP4444              N
-NMDC        long  2026-06-15  KSP4444              N
-SWIGGY      short 2026-06-15  KSP4444              N
-OIL         short 2026-06-11  Anxious_Neat_6274    N
-KNRCON      long  2026-06-08  KSP4444              Y (dir)
-TMPV        long  2026-06-05  KSP4444              N
-EPACKPEB    long  2026-06-04  Pranjal2930          Y  (dir+alpha)
-INFY        long  2026-06-03  Icy_Employ_5530      N
-MAHABANK    short 2026-06-03  KSP4444              N
-HSCL        long  2026-06-02  KSP4444              Y  (dir+alpha)
-RITES       long  2026-06-02  Guilty_Wolverine7150 Y  (dir+alpha)
-HSCL        short 2026-06-02  KSP4444              N
-NMDC        long  2026-06-01  KSP4444              N
-NMDC        short 2026-06-01  KSP4444              Y  (dir+alpha)
-MAHABANK    long  2026-06-01  KSP4444              Y  (dir+alpha)
-SWIGGY      short 2026-05-31  KSP4444              Y  (dir+alpha)
-PERSISTENT  long  2026-05-04  Pale-Main3272        Y  (dir+alpha)
-ICICIBANK   long  2026-05-02  Cautious_Variety4721 N (alpha Y)
-OIL         short 2026-04-08  CalligrapherRare5499 Y  (dir+alpha)
-SWIGGY      short 2026-03-19  CutExternal500       Y  (dir+alpha)
-SRM         long  2026-02-18  AmbitiousButLazy2007 N
-DRREDDY     short 2026-01-17  DoughCook            N
-VBL         long  2025-09-08  superequity          N
-```
+**Best validated picks — both direction and alpha beat NIFTY (30d):**
 
-**Best validated picks (both direction and alpha beat NIFTY):** EPACKPEB, RITES, PERSISTENT, MAHABANK (Jun 1), NMDC short (Jun 1), SWIGGY short (May 31), OIL short (Apr 8), SWIGGY short (Mar 19), HSCL long (Jun 2), HSCL long (Jun 19). Shorts were the standout theme — 4 of 9 validated shorts were correct including two SWIGGY crashes.
+| Symbol | Dir | Call date | Author |
+|---|---|---|---|
+| AXISBANK | long | 2025-09-11 | sup8055 |
+| PNB | long | 2025-08-24 | Parth_NB |
+| VEDL | long | 2025-10-11 | Successful_Buy6833 |
+| LAURUSLABS | long | 2025-11-06 | AA05121982 |
+| RELIANCE | long | 2025-11-22 | Major_Garden_8719 |
+| INFY | long | 2025-11-12 | Ok_Dot_3774 |
+| GOKEX | short | 2025-11-26 | Ok_Dot_3774 |
+| BAJFINANCE | short | 2025-11-26 | Ok_Dot_3774 |
+| E2E | short | 2025-11-20 | hni_slayer |
+| HINDZINC | long | 2025-12-26 | Ok-Sort6066 |
+| INDIGO | long | 2025-12-09 | Tricky_Artichoke_452 |
+| SUZLON | long | 2025-12-03 | iamabhaykaran |
+| RELIANCE | short | 2026-01-05 | ChartsBySachin |
+| SWIGGY | short | 2026-03-12 | Select-Assumption377 |
+| OIL | short | 2026-05-11 | Anxious_Neat_6274 |
+| KEI / AIIL | long | 2026-05-15 | pokemwoney |
+| WIPRO | long | 2026-05-02 | Ok_Dot_3774 |
+| RITES / EPACKPEB / PERSISTENT | long | 2026-06 | various |
+| NMDC / MAHABANK / SWIGGY / OIL / HSCL | mixed | 2026-05-31 → 06-19 | KSP4444 (6 of 15) |
+
+Shorts were the standout theme: 12 of 24 validated shorts (50%) were correct, including two SWIGGY crash calls.
 
 ## 5. Username accuracy (manually validated)
 
-Only users with enough independent, comparable validated calls are ranked. With 26 validated calls, exactly **one user qualifies**:
+Only users with enough independent, comparable validated calls are ranked. With 74 validated calls across 352 reviewed candidates, **eight users qualify (≥2 calls); four of them have ≥3**:
 
-| User | Validated calls | Direction hits | Note |
+| User | Validated calls | Direction hits | Symbols |
 |---|---|---|---|
-| KSP4444 | 15 | 6 (40%) | Daily-watchlist style; calls concentrated 2026-05-31 → 06-19 across ~10 symbols; mixed long/short per day |
+| KSP4444 | 15 | 6 (40%) | watchlist burst 2026-05-31 → 06-19, ~10 symbols |
+| Ok_Dot_3774 | 7 | 4 (57%) | WIPRO, INFY, GOKEX, BAJFINANCE, TMPV, COASTCORP, AVANTIFEED |
+| pokemwoney | 4 | 2 (50%) | intraday: KEI, AIIL, MCX, IPCALAB |
+| sarfaraj_patel786 | 3 | 1 (33%) | intraday picks: MARUTI, ICICIBANK, TITAN |
+| Anxious_Neat_6274 | 2 | 1 (50%) | OIL short (×2, one hit) |
+| Tricky_Artichoke_452 | 2 | 1 (50%) | ITC, INDIGO |
+| DoughCook | 2 | 0 (0%) | NAVNETEDUL, DRREDDY |
+| IamURcrushh | 2 | 0 (0%) | BPCL CE, IOC CE |
 
-KSP4444's record is real but narrow: a burst of short-horizon intraday-style calls in a three-week window, not a diversified track record. No other user reached even 2 validated calls. **No credible per-user accuracy ranking is possible from this corpus** — the community's call density is too low and most "calls" are questions or retrospectives.
+Only **two users have enough volume to be meaningful**: KSP4444 (15 calls, 40%) and Ok_Dot_3774 (7 calls, 57%). Both records are real but narrow — KSP4444 is a three-week intraday-watchlist burst; Ok_Dot_3774 spreads buyback/exit calls across Nov–May with 4/7 correct. Everything else is anecdotal. **A robust per-user accuracy ranking remains impossible from one year of this corpus** — call density is too low and most posts are questions, news, or retrospectives.
 
 ## 6. Caveats
 
-- Validation sample: 120/353 candidates (highest-signal). Precision estimate (22%) applies to that subset.
+- Validation covered all 353 heuristic candidates (two batches of 120 + 233); precision was 21% (74/352 — one record dropped in batch 1 due to reviewer-array ambiguity, invalid under both overlapping verdicts).
 - 30-day horizon is a fixed mechanical window; many of these are intraday/swing calls and were never meant to be judged over 30 days (cuts both ways).
 - Prices are NSE closes through 2026-08-14; calls made after ~2026-07-18 are excluded from scoring.
 - Comment enrichment was still downloading at report time; validated log used post text + whatever top comments were already in the archive DB.
@@ -125,6 +127,6 @@ KSP4444's record is real but narrow: a burst of short-horizon intraday-style cal
 - `indian-stock-reddit-2025-08-17-to-2026-08-17.sqlite` — full archive (posts + comments)
 - `one-year-analysis.json` — interest/performance analysis (heuristic)
 - `one-year-heuristic-candidates.csv` — 353 raw candidate calls
-- `one-year-validation-input.jsonl` — 120 reviewed records with thread context
-- `one-year-validated-calls.csv` — 26 validated calls with corrected direction + rescored hits
+- `one-year-validation-input.jsonl` / `one-year-validation-input-2.jsonl` — 120 + 233 reviewed records with thread context
+- `one-year-validated-calls.csv` — 74 validated calls (of 352 reviewed) with corrected direction + rescored hits
 - `verify` output (126,523 in-window, 0 out-of-window) — audit trail in `scripts/verify_archive_window.py`

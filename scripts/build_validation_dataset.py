@@ -19,12 +19,25 @@ def main() -> None:
     ap.add_argument("--db", default="indian-stock-reddit-2025-08-17-to-2026-08-17.sqlite")
     ap.add_argument("--output", default="one-year-validation-input.jsonl")
     ap.add_argument("--max", type=int, default=120, help="max candidates to include")
+    ap.add_argument(
+        "--exclude",
+        default=None,
+        help="jsonl of already-reviewed records; their (post_id, symbol) pairs are skipped",
+    )
     args = ap.parse_args()
+
+    excluded: set[tuple[str, str]] = set()
+    if args.exclude:
+        for line in open(args.exclude):
+            rec = json.loads(line)
+            if rec.get("post_id") and rec.get("symbol"):
+                excluded.add((rec["post_id"], rec["symbol"]))
 
     conn = sqlite3.connect(args.db)
     conn.row_factory = sqlite3.Row
 
     rows = list(csv.DictReader(open(args.candidates)))
+    rows = [r for r in rows if (r["post_id"], r["symbol"]) not in excluded]
     # prefer candidates with signal words, then by recency
     import re
     sig = re.compile(r"\b(buy|bought|recommend|target|bullish|multibagger|avoid|sell|short|hold)\b", re.I)

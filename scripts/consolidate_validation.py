@@ -12,6 +12,7 @@ Outputs one-year-validated-calls.csv and prints aggregate stats.
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import re
@@ -37,16 +38,22 @@ def extract_json(path: str) -> list[dict]:
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--chunks", nargs="+", default=CHUNK_FILES)
+    ap.add_argument("--summaries", nargs="+", default=SUMMARY_FILES)
+    ap.add_argument("--candidates", default=CANDIDATES)
+    ap.add_argument("--output", default=OUTPUT)
+    args = ap.parse_args()
     # context from chunks (post_id -> symbol etc.)
     chunk_records: dict[str, dict] = {}
-    for chunk_file in CHUNK_FILES:
+    for chunk_file in args.chunks:
         for line in open(chunk_file):
             rec = json.loads(line)
             chunk_records[(rec["post_id"], rec["symbol"])] = rec
 
     # reviewer verdicts
     verdicts: dict[tuple[str, str], dict] = {}
-    for summary_file in SUMMARY_FILES:
+    for summary_file in args.summaries:
         for v in extract_json(summary_file):
             pid = v.get("post_id")
             sym = v.get("symbol")
@@ -62,7 +69,7 @@ def main() -> None:
             verdicts[(pid, sym)] = v
 
     # candidates
-    candidates = list(csv.DictReader(open(CANDIDATES)))
+    candidates = list(csv.DictReader(open(args.candidates)))
     keyed = {(r["post_id"], r["symbol"]): r for r in candidates}
 
     rows = []
@@ -108,7 +115,7 @@ def main() -> None:
         )
 
     rows.sort(key=lambda r: (not r["valid"], r["call_date"]), reverse=True)
-    with open(OUTPUT, "w", newline="") as f:
+    with open(args.output, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
@@ -143,7 +150,7 @@ def main() -> None:
                 f"  {user:<28} calls={len(calls):>2} dir_hits={hits} "
                 f"({hits / len(calls):.0%})  symbols={[c['symbol'] for c in calls]}"
             )
-    print(f"\nwrote {OUTPUT}")
+    print(f"\nwrote {args.output}")
 
 
 if __name__ == "__main__":
