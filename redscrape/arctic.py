@@ -122,10 +122,15 @@ class ArcticShiftClient:
                 last_problem = f"HTTP {response.status_code}"
                 if attempt + 1 == self.retries:
                     break
-                delay = self._retry_delay(
-                    response.headers.get("Retry-After"), 2**attempt
-                )
-                await self._sleep(min(delay, 30.0))
+                # Arctic Shift's 422 is a server-side "Timeout" under load and
+                # is probabilistic: retry patiently with a longer base delay.
+                if response.status_code == 422:
+                    delay = 5.0 * (2**attempt)
+                else:
+                    delay = self._retry_delay(
+                        response.headers.get("Retry-After"), 2**attempt
+                    )
+                await self._sleep(min(delay, 60.0))
                 continue
 
             response.raise_for_status()
@@ -241,25 +246,42 @@ class ArcticShiftClient:
             # end of a full page, retrieve that one-second bucket independently.
             # A non-full bucket proves every tied post was observed; a saturated
             # bucket has no stable tie-break cursor, so fail rather than skip.
+            # Arctic Shift's narrow queries occasionally time out server-side
+            # (HTTP 422 "Timeout. Maybe slow down a bit"), so widen the probe
+            # window on failure and filter locally to the exact second.
             if self.verify_timestamp_buckets and len(rows) >= self.page_size:
-                bucket_before = min(window.before, next_cursor + 1)
-                try:
-                    bucket_rows = await self._request_page(
-                        subreddit,
-                        next_cursor - 1,
-                        bucket_before,
-                        limit=self.page_size,
-                    )
-                    pages += 1
-                    bucket = [self._normalize(row, subreddit) for row in bucket_rows]
-                except Exception as exc:
-                    message = f"timestamp bucket verification failed: {exc}"
-                    raise IncompleteCoverageError(message, partial(message)) from exc
-                if len(bucket_rows) >= self.page_size:
+                bucket: list[tuple[dict[str, Any], float]] = []
+                bucket_attempts: list[tuple[float, float]] = [
+                    (next_cursor - 1, min(window.before, next_cursor + 1)),
+                    (next_cursor - 30, min(window.before, next_cursor + 30)),
+                    (next_cursor - 300, min(window.before, next_cursor + 300)),
+                ]
+                last_error = "unknown bucket failure"
+                for bucket_after, bucket_before in bucket_attempts:
+                    try:
+                        bucket_rows = await self._request_page(
+                            subreddit,
+                            bucket_after,
+                            bucket_before,
+                            limit=self.page_size,
+                        )
+                        pages += 1
+                        bucket = [
+                            (post, ts)
+                            for post, ts in (
+                                self._normalize(row, subreddit) for row in bucket_rows
+                            )
+                            if ts == next_cursor
+                        ]
+                        last_error = ""
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        last_error = str(exc)
+                if last_error:
+                    message = f"timestamp bucket verification failed: {last_error}"
+                    raise IncompleteCoverageError(message, partial(message)) from None
+                if len(bucket) >= self.page_size:
                     message = "timestamp bucket saturated without a stable tie-break cursor"
-                    raise IncompleteCoverageError(message, partial(message))
-                if any(timestamp != next_cursor for _post, timestamp in bucket):
-                    message = "timestamp bucket returned an unexpected timestamp"
                     raise IncompleteCoverageError(message, partial(message))
                 page_end_ids = {
                     post["id"] for post, timestamp in page if timestamp == next_cursor

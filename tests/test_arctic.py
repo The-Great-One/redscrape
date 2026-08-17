@@ -313,3 +313,56 @@ def test_saturated_timestamp_bucket_fails_closed() -> None:
     asyncio.run(client.close())
 
     assert caught.value.result.complete is False
+
+
+def test_bucket_verification_widens_window_after_server_timeout() -> None:
+    """Arctic Shift returns 422 'Timeout' on narrow probes; the client must
+    retry with a wider window, filter locally to the target second, and still
+    recover tied posts instead of failing the whole subreddit."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        after = float(request.url.params["after"])
+        before = float(request.url.params["before"])
+        if after == 99 and before == 200:
+            return httpx.Response(200, json={
+                "data": [post("a", 100), post("a2", 100), post("b", 101), post("b2", 101)]
+            })
+        if after == 100 and before == 102:
+            # narrow probe times out server-side on the first two attempts
+            return httpx.Response(422, json={"data": None, "error": "Timeout. Maybe slow down a bit"})
+        if after == 71 and before == 131:
+            # widened probe returns the same second plus neighbours
+            return httpx.Response(200, json={
+                "data": [post("b", 101), post("b2", 101), post("hidden", 101), post("c", 105)]
+            })
+        return httpx.Response(200, json={"data": []})
+
+    client = client_for(
+        handler,
+        page_size=4,
+        empty_confirmations=1,
+        verify_timestamp_buckets=True,
+    )
+    result = asyncio.run(client.fetch_subreddit("python", TimeWindow(100, 200)))
+    asyncio.run(client.close())
+
+    assert [item["id"] for item in result.posts] == ["a", "a2", "b", "b2", "hidden"]
+    assert result.complete is True
+
+
+def test_bucket_verification_fails_when_all_windows_timeout() -> None:
+    """If every probe width fails, coverage must fail closed, never complete."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        after = float(request.url.params["after"])
+        before = float(request.url.params["before"])
+        if after == 99 and before == 200:
+            return httpx.Response(200, json={"data": [post("a", 100), post("b", 101)]})
+        return httpx.Response(422, json={"data": None, "error": "Timeout. Maybe slow down a bit"})
+
+    client = client_for(handler, verify_timestamp_buckets=True)
+    with pytest.raises(IncompleteCoverageError, match="timestamp bucket verification failed") as caught:
+        asyncio.run(client.fetch_subreddit("python", TimeWindow(100, 200)))
+    asyncio.run(client.close())
+
+    assert caught.value.result.complete is False

@@ -94,6 +94,7 @@ def _print_archive_result(result: ArchiveResult, window: TimeWindow) -> None:
             f"{comments.succeeded}/{comments.requested} succeeded, "
             f"{comments.zero_comments} empty, {comments.failed} failed"
         )
+        print(f"  stored comments: {comments.comments}")
         for post_id, error in sorted((comments.errors or {}).items()):
             print(f"  - {post_id}: {error}")
 
@@ -110,7 +111,9 @@ def _cmd_archive(args: argparse.Namespace) -> int:
     subs = _parse_subs(args.subs)
 
     async def run() -> ArchiveResult:
-        async with ArcticShiftClient(retries=cfg.retries, timeout=cfg.timeout) as arctic:
+        async with ArcticShiftClient(
+            retries=cfg.arctic_retries, timeout=cfg.timeout
+        ) as arctic:
             if args.comments:
                 async with ClientPool(cfg) as pool:
                     _print_pool(pool)

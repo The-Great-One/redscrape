@@ -32,7 +32,9 @@ DEFAULT_CONFIG = {
     "expand_more": True,  # expand "load more comments" nodes
     "more_limit": 500,    # max children to expand per morechildren call
     "retries": 4,
-    "timeout": 25.0,
+    "arctic_retries": 10, # Arctic Shift returns transient HTTP 422 "Timeout"
+                          # under load; be patient and keep retrying.
+    "timeout": 120.0,
     "user_agent": None,   # override if needed
     "cookie_string": None,
 }
@@ -48,6 +50,7 @@ class Config:
     expand_more: bool
     more_limit: int
     retries: int
+    arctic_retries: int
     timeout: float
     user_agent: str | None
     cookies: dict[str, str] = field(default_factory=dict)
@@ -159,6 +162,7 @@ def load_config(overrides: dict | None = None) -> Config:
         expand_more=bool(cfg["expand_more"]),
         more_limit=int(cfg["more_limit"]),
         retries=int(cfg["retries"]),
+        arctic_retries=int(cfg.get("arctic_retries", 10)),
         timeout=float(cfg["timeout"]),
         user_agent=cfg.get("user_agent"),
         cookies=cookies,
