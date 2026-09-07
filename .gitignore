@@ -23,3 +23,26 @@ one-year-heuristic-candidates.csv
 one-year-validated-calls.csv
 one-year-validation-input.jsonl
 nse-equity-master.txt
+
+# Personal / data files
+sahil-*.md
+fetch_bw_comments.py
+indian-stock-reddit-*.json
+indian-stock-reddit-*.csv
+indian-stock-reddit-*.md
+one-year-validation-input-*.jsonl
+weight-loss-*.md
+*.jsonl
+scripts/klook_*.py
+
+# Personal / data files
+sahil-*.md
+fetch_bw_comments.py
+indian-stock-reddit-*.json
+indian-stock-reddit-*.csv
+indian-stock-reddit-*.md
+indian-stock-reddit-validated-calls.csv
+one-year-validation-input-*.jsonl
+weight-loss-*.md
+*.jsonl
+scripts/klook_*.py
