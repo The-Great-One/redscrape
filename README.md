@@ -156,7 +156,7 @@ and exits nonzero. Posts-only archives need no Reddit login.
 
 | flag | default | meaning |
 |------|---------|---------|
-| `--db` | `~/.redscrape/redscrape.db` | SQLite path |
+| `--db` | `~/Desktop/Projects/redscrape/data/redscrape.db` | SQLite path |
 | `--rpm` | `20` | requests/minute cap **per session** (cookie ~24/min, oauth ~100/min) |
 | `--concurrency` | `12` | max in-flight requests across all sessions |
 | `--comment-limit` | `500` | comments fetched per post |
@@ -200,3 +200,13 @@ item, so nothing is lost.
 - The 403 you'd see with plain `curl` is a fingerprint block, **not** an auth
   failure. Always go through the client.
 - Self-posts have their body in `selftext`; link posts in `url`. Both are stored.
+
+## Testing
+
+```bash
+python -m pytest -q          # 58 tests
+```
+
+## License
+
+MIT
