@@ -11,6 +11,8 @@ venv/
 
 # data / secrets
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
@@ -46,3 +48,7 @@ one-year-validation-input-*.jsonl
 weight-loss-*.md
 *.jsonl
 scripts/klook_*.py
+
+# Personal / project memory
+.hermes.md
+one-year-reddit-stock-study-*.md
