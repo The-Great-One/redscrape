@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
-ROOT = Path('/Users/sahilgoel/Desktop/Projects/redscrape')
+ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / 'indian-stock-reddit-2026-08.sqlite'
 MASTER = ROOT / 'nse-equity-master.txt'
 OUT_JSON = ROOT / 'indian-stock-reddit-analysis.json'

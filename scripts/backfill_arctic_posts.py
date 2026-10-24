@@ -9,7 +9,7 @@ import requests
 
 from redscrape.storage import Store
 
-DB = Path('/Users/sahilgoel/Desktop/Projects/redscrape/indian-stock-reddit-2026-08.sqlite')
+DB = Path(__file__).resolve().parents[1] / 'indian-stock-reddit-2026-08.sqlite'
 SUBS = ['IndianStockMarket', 'IndiaInvestments', 'DalalStreetTalks', 'StockMarketIndia', 'NSEbets', 'IndianStreetBets']
 AFTER = 1778869800  # 2026-05-15 18:30 UTC
 BEFORE = 1786904999  # 2026-08-16 18:29:59 UTC

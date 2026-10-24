@@ -15,7 +15,7 @@ from redscrape.pool import ClientPool
 from redscrape.storage import Store
 from redscrape.timewindow import parse_time_window
 
-DEFAULT_DB = Path('/Users/sahilgoel/Desktop/Projects/redscrape/indian-stock-reddit-2026-08.sqlite')
+DEFAULT_DB = Path(__file__).resolve().parents[1] / 'indian-stock-reddit-2026-08.sqlite'
 SIGNAL = re.compile(
     r'\b(?:buy|bought|accumulat|recommend|suggest|stock\s+pick|multibagger|target|'
     r'portfolio|which\s+(?:share|stock)|hold|sell|short|avoid|bullish|bearish|'

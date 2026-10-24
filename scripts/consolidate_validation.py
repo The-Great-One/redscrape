@@ -17,12 +17,8 @@ import csv
 import json
 import re
 
-SUMMARY_FILES = [
-    "/Users/sahilgoel/.hermes/cache/delegation/subagent-summary-0-20260817_120050_939055.txt",
-    "/Users/sahilgoel/.hermes/cache/delegation/subagent-summary-1-20260817_120050_940809.txt",
-    "/Users/sahilgoel/.hermes/cache/delegation/subagent-summary-2-20260817_120050_943180.txt",
-]
-CHUNK_FILES = ["/tmp/validation-chunk-0.jsonl", "/tmp/validation-chunk-1.jsonl", "/tmp/validation-chunk-2.jsonl"]
+SUMMARY_FILES = []
+CHUNK_FILES = []
 CANDIDATES = "one-year-heuristic-candidates.csv"
 OUTPUT = "one-year-validated-calls.csv"
 
